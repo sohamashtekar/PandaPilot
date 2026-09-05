@@ -53,13 +53,18 @@ class CarInterface(CarInterfaceBase):
 
   # returns a car.CarState
   def _update(self, c):
-    ret = self.CS.update(self.cp, self.cp_cam)
+    ret = self.CS.update(self.cp, self.cp_cam, self.cp_body)
 
     # events
     events = self.create_common_events(ret)
 
     if self.CS.lkas_disabled:
       events.add(EventName.lkasDisabled)
+
+    # Only after a TI was seen and then faulted (timeout / ERROR / VIOL). Never on cars without TI.
+    # Driver tug is a pause, not this event.
+    if self.CS.ti_fault:
+      events.add(EventName.steerTempUnavailable)
 
     ret.events = events.to_msg()
 

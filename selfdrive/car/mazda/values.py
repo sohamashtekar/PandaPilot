@@ -23,6 +23,19 @@ class CarControllerParams:
   STEER_ERROR_MAX = 350           # max delta between torque cmd and torque motor
   STEER_STEP = 1  # 100 Hz
 
+  # Torque interceptor (TI). Unused unless a live TI_FEEDBACK heartbeat is present.
+  TI_STEER_MAX = 600
+  TI_STEER_DELTA_UP = 6
+  TI_STEER_DELTA_DOWN = 15
+  TI_STEER_DRIVER_ALLOWANCE = 5
+  TI_STEER_DRIVER_MULTIPLIER = 40
+  TI_STEER_DRIVER_FACTOR = 1
+  TI_STEER_ERROR_MAX = 350
+  TI_HEARTBEAT_TIMEOUT = 0.25     # seconds without a valid TI_FEEDBACK
+  TI_STEER_THRESHOLD = 10         # pause TI assist at or above this driver torque
+  TI_STEER_THRESHOLD_RELEASE = 7  # resume only after torque drops below this
+  TI_FAULT_CLEAR_TIMEOUT = 5.0    # seconds after loss before stock OP can re-engage
+
   def __init__(self, CP):
     pass
 
@@ -56,6 +69,13 @@ class LKAS_LIMITS:
   STEER_THRESHOLD = 15
   DISABLE_SPEED = 45    # kph
   ENABLE_SPEED = 52     # kph
+
+
+class TI_STATE:
+  DISCOVER = 0
+  OFF = 1
+  DRIVER_OVER = 2
+  RUN = 3
 
 
 class Buttons:

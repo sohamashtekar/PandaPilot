@@ -1,9 +1,12 @@
+import time
+
 from cereal import car
 from openpilot.common.conversions import Conversions as CV
 from opendbc.can.can_define import CANDefine
 from opendbc.can.parser import CANParser
 from openpilot.selfdrive.car.interfaces import CarStateBase
-from openpilot.selfdrive.car.mazda.values import DBC, LKAS_LIMITS, GEN1
+from openpilot.selfdrive.car.mazda.values import DBC, LKAS_LIMITS, GEN1, TI_STATE, CarControllerParams
+
 
 class CarState(CarStateBase):
   def __init__(self, CP):
@@ -18,8 +21,20 @@ class CarState(CarStateBase):
     self.lkas_allowed_speed = False
     self.lkas_disabled = False
 
-  def update(self, cp, cp_cam):
+    self.ti_present = False
+    self.ti_was_present = False
+    self.ti_lkas_allowed = False
+    self.ti_fault = False
+    self.ti_ramp_down = False
+    self.ti_version = 1
+    self.ti_state = TI_STATE.OFF
+    self.ti_violation = 0
+    self.ti_error = 0
+    self.ti_last_seen = 0.0
+    self.ti_driver_torque = 0.0
+    self.ti_steering_pressed = False
 
+  def update(self, cp, cp_cam, cp_body=None):
     ret = car.CarState.new_message()
     ret.wheelSpeeds = self.get_wheel_speeds(
       cp.vl["WHEEL_SPEEDS"]["FL"],
@@ -44,8 +59,22 @@ class CarState(CarStateBase):
                                                                       cp.vl["BLINK_INFO"]["RIGHT_BLINK"] == 1)
 
     ret.steeringAngleDeg = cp.vl["STEER"]["STEER_ANGLE"]
-    ret.steeringTorque = cp.vl["STEER_TORQUE"]["STEER_TORQUE_SENSOR"]
-    ret.steeringPressed = abs(ret.steeringTorque) > LKAS_LIMITS.STEER_THRESHOLD
+    stock_steer_torque = cp.vl["STEER_TORQUE"]["STEER_TORQUE_SENSOR"]
+
+    now = time.monotonic()
+    self._update_ti(cp_body, now)
+
+    if self.ti_present:
+      ret.steeringTorque = self.ti_driver_torque
+      if abs(ret.steeringTorque) >= CarControllerParams.TI_STEER_THRESHOLD:
+        self.ti_steering_pressed = True
+      elif abs(ret.steeringTorque) < CarControllerParams.TI_STEER_THRESHOLD_RELEASE:
+        self.ti_steering_pressed = False
+      ret.steeringPressed = self.ti_steering_pressed
+    else:
+      self.ti_steering_pressed = False
+      ret.steeringTorque = stock_steer_torque
+      ret.steeringPressed = abs(ret.steeringTorque) > LKAS_LIMITS.STEER_THRESHOLD
 
     ret.steeringTorqueEps = cp.vl["STEER_TORQUE"]["STEER_TORQUE_MOTOR"]
     ret.steeringRateDeg = cp.vl["STEER_RATE"]["STEER_ANGLE_RATE"]
@@ -105,6 +134,60 @@ class CarState(CarStateBase):
 
     return ret
 
+  def _update_ti(self, cp_body, now):
+    self.ti_present = False
+    self.ti_lkas_allowed = False
+
+    ti_updated = False
+    if cp_body is not None:
+      try:
+        ti_updated = len(cp_body.vl_all["TI_FEEDBACK"]["TI_TORQUE_SENSOR"]) > 0
+      except (KeyError, TypeError, AttributeError):
+        ti_updated = False
+
+    if ti_updated:
+      try:
+        msg = cp_body.vl["TI_FEEDBACK"]
+        sensor = msg["TI_TORQUE_SENSOR"]
+        chksum = msg["CHKSUM"]
+        # TI echoes torque in the checksum byte (raw byte0 == byte1).
+        if sensor == chksum:
+          self.ti_last_seen = now
+          self.ti_driver_torque = sensor
+          self.ti_version = int(msg["VERSION_NUMBER"])
+          self.ti_state = int(msg["STATE"])
+          self.ti_violation = int(msg["VIOL"])
+          self.ti_error = int(msg["ERROR"])
+          if self.ti_version > 1:
+            self.ti_ramp_down = msg["RAMP_DOWN"] == 1
+          else:
+            self.ti_ramp_down = False
+      except (KeyError, TypeError, AttributeError):
+        pass
+
+    if self.ti_last_seen > 0.0 and (now - self.ti_last_seen) <= CarControllerParams.TI_HEARTBEAT_TIMEOUT:
+      self.ti_present = True
+      self.ti_was_present = True
+      self.ti_lkas_allowed = (
+        self.ti_state == TI_STATE.RUN and
+        not self.ti_ramp_down and
+        self.ti_error == 0 and
+        self.ti_violation == 0
+      )
+      if self.ti_error != 0 or self.ti_violation != 0:
+        self.ti_fault = True
+      elif self.ti_lkas_allowed:
+        self.ti_fault = False
+    else:
+      # Lost heartbeat: do not keep last TI torque as driver torque.
+      self.ti_driver_torque = 0.0
+      self.ti_lkas_allowed = False
+      if self.ti_was_present:
+        self.ti_fault = True
+        if self.ti_last_seen > 0.0 and (now - self.ti_last_seen) > CarControllerParams.TI_FAULT_CLEAR_TIMEOUT:
+          self.ti_was_present = False
+          self.ti_fault = False
+
   @staticmethod
   def get_can_parser(CP):
     messages = [
@@ -144,3 +227,11 @@ class CarState(CarStateBase):
       ]
 
     return CANParser(DBC[CP.carFingerprint]["pt"], messages, 2)
+
+  @staticmethod
+  def get_body_can_parser(CP):
+    # Frequency 0: parse TI_FEEDBACK if present, never fail canValid when it is missing.
+    messages = [
+      ("TI_FEEDBACK", 0),
+    ]
+    return CANParser(DBC[CP.carFingerprint]["pt"], messages, 1)

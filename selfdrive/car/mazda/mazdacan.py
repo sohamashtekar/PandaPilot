@@ -62,6 +62,20 @@ def create_steering_control(packer, car_fingerprint, frame, apply_steer, lkas):
   return packer.make_can_msg("CAM_LKAS", 0, values)
 
 
+def create_ti_steering_control(packer, car_fingerprint, frame, apply_steer):
+  # Knock/command for the torque interceptor on the aux bus.
+  # apply_steer must be 0 unless every fail-closed gate passed.
+  commands = []
+  if car_fingerprint in GEN1:
+    values = {
+      "LKAS_REQUEST": apply_steer,
+      "CHKSUM": apply_steer,
+      "KEY": 3294744160,
+    }
+    commands.append(packer.make_can_msg("CAM_LKAS2", 1, values))
+  return commands
+
+
 def create_alert_command(packer, cam_msg: dict, ldw: bool, steer_required: bool):
   values = {s: cam_msg[s] for s in [
     "LINE_VISIBLE",
