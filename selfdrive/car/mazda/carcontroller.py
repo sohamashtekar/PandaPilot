@@ -7,6 +7,14 @@ from openpilot.selfdrive.car.mazda.values import CarControllerParams, Buttons, T
 VisualAlert = car.CarControl.HUDControl.VisualAlert
 
 
+def _unwind_steer_to_zero(last, delta_down):
+  if last > 0:
+    return max(last - delta_down, 0)
+  if last < 0:
+    return min(last + delta_down, 0)
+  return 0
+
+
 class CarController:
   def __init__(self, dbc_name, CP, VM):
     self.CP = CP
@@ -24,15 +32,20 @@ class CarController:
     driver_tug = bool(CS.out.steeringPressed) or CS.ti_state == TI_STATE.DRIVER_OVER
 
     if CC.latActive:
-      if CS.ti_present and CS.ti_lkas_allowed and not driver_tug:
-        ti_new_steer = int(round(CC.actuators.steer * CarControllerParams.TI_STEER_MAX))
-        ti_apply_steer = apply_ti_steer_torque_limits(ti_new_steer, self.ti_apply_steer_last,
-                                                      CS.out.steeringTorque, CarControllerParams)
+      if CS.ti_present and driver_tug:
+        # Quick unwind so the driver takes over without a dead-wheel jerk.
+        # Resume still ramps up from whatever is left (DELTA_UP), not a snap.
+        apply_steer = _unwind_steer_to_zero(self.apply_steer_last, CarControllerParams.TI_STEER_DELTA_DOWN_TUG)
+        ti_apply_steer = _unwind_steer_to_zero(self.ti_apply_steer_last, CarControllerParams.TI_STEER_DELTA_DOWN_TUG)
+      else:
+        if CS.ti_present and CS.ti_lkas_allowed:
+          ti_new_steer = int(round(CC.actuators.steer * CarControllerParams.TI_STEER_MAX))
+          ti_apply_steer = apply_ti_steer_torque_limits(ti_new_steer, self.ti_apply_steer_last,
+                                                        CS.out.steeringTorque, CarControllerParams)
 
-      # Stock camera spoof. Pause it too while a TI is live and the driver is tugging
-      # so the EPS does not keep pulling against the driver.
-      if not (CS.ti_present and driver_tug):
-        new_steer = int(round(CC.actuators.steer * CarControllerParams.STEER_MAX))
+        # Stock camera spoof. With TI, cap this path at 600 as well (openpilot was 600+600).
+        stock_steer_max = CarControllerParams.TI_STEER_MAX if CS.ti_present else CarControllerParams.STEER_MAX
+        new_steer = int(round(CC.actuators.steer * stock_steer_max))
         apply_steer = apply_driver_steer_torque_limits(new_steer, self.apply_steer_last,
                                                        CS.out.steeringTorque, CarControllerParams)
 
@@ -53,7 +66,7 @@ class CarController:
         # Send Resume button when planner wants car to move
         can_sends.append(mazdacan.create_button_cmd(self.packer, self.CP.carFingerprint, CS.crz_btns_counter, Buttons.RESUME))
 
-    # Always 0 on pause/fault so resume ramps from zero instead of snapping.
+    # Fault/disengage still snap to 0. Tug unwind keeps last so resume is continuous.
     self.apply_steer_last = apply_steer
     self.ti_apply_steer_last = ti_apply_steer
 
