@@ -2,6 +2,7 @@ import time
 
 from cereal import car
 from openpilot.common.conversions import Conversions as CV
+from openpilot.common.swaglog import cloudlog
 from opendbc.can.can_define import CANDefine
 from opendbc.can.parser import CANParser
 from openpilot.selfdrive.car.interfaces import CarStateBase
@@ -95,9 +96,8 @@ class CarState(CarStateBase):
     lkas_blocked = cp.vl["STEER_RATE"]["LKAS_BLOCK"] == 1
 
     if self.CP.minSteerSpeed > 0:
-      # LKAS is enabled at 52kph going up and disabled at 45kph going down
-      # wait for LKAS_BLOCK signal to clear when going up since it lags behind the speed sometimes
-      if speed_kph > LKAS_LIMITS.ENABLE_SPEED and not lkas_blocked:
+      # Do not wait for LKAS_BLOCK to clear: stock EPS asserts it below ~45 kph.
+      if speed_kph > LKAS_LIMITS.ENABLE_SPEED:
         self.lkas_allowed_speed = True
       elif speed_kph < LKAS_LIMITS.DISABLE_SPEED:
         self.lkas_allowed_speed = False
@@ -120,7 +120,10 @@ class CarState(CarStateBase):
     # Check if LKAS is disabled due to lack of driver torque when all other states indicate
     # it should be enabled (steer lockout). Don't warn until we actually get lkas active
     # and lose it again, i.e, after initial lkas activation
-    ret.steerFaultTemporary = self.lkas_allowed_speed and lkas_blocked
+    # LKAS_BLOCK is stock camera LKAS. Below ~45 kph it is normally set; treating
+    # it as a fault would zero latActive so OP never sends (TI never sees a command).
+    ret.steerFaultTemporary = (self.lkas_allowed_speed and lkas_blocked and
+                               speed_kph >= LKAS_LIMITS.STOCK_DISABLE_SPEED)
 
     self.acc_active_last = ret.cruiseState.enabled
 
@@ -130,7 +133,9 @@ class CarState(CarStateBase):
     self.lkas_disabled = cp_cam.vl["CAM_LANEINFO"]["LANE_LINES"] == 0
     self.cam_lkas = cp_cam.vl["CAM_LKAS"]
     self.cam_laneinfo = cp_cam.vl["CAM_LANEINFO"]
-    ret.steerFaultPermanent = cp_cam.vl["CAM_LKAS"]["ERR_BIT_1"] == 1
+    # OP spoofs CAM_LKAS. Camera ERR_BIT_1 is not an EPS fault after intercept
+    # and stayed stuck at 1 on this C2 after CAM_LKAS2, blocking engage.
+    ret.steerFaultPermanent = False
 
     return ret
 
@@ -152,6 +157,7 @@ class CarState(CarStateBase):
         chksum = msg["CHKSUM"]
         # TI echoes torque in the checksum byte (raw byte0 == byte1).
         if sensor == chksum:
+          first_heartbeat = self.ti_last_seen == 0.0
           self.ti_last_seen = now
           self.ti_driver_torque = sensor
           self.ti_version = int(msg["VERSION_NUMBER"])
@@ -162,6 +168,10 @@ class CarState(CarStateBase):
             self.ti_ramp_down = msg["RAMP_DOWN"] == 1
           else:
             self.ti_ramp_down = False
+          if first_heartbeat:
+            cloudlog.warning("TI_FEEDBACK heartbeat: state=%s version=%s torque=%s viol=%s err=%s" %
+                             (self.ti_state, self.ti_version, self.ti_driver_torque,
+                              self.ti_violation, self.ti_error))
       except (KeyError, TypeError, AttributeError):
         pass
 

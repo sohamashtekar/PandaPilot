@@ -20,6 +20,7 @@ class CarController:
     self.CP = CP
     self.apply_steer_last = 0
     self.ti_apply_steer_last = 0
+    self.ti_knock_frames_left = CarControllerParams.TI_KNOCK_FRAMES
     self.packer = CANPacker(dbc_name)
     self.brake_counter = 0
     self.frame = 0
@@ -73,15 +74,23 @@ class CarController:
     # send HUD alerts
     if self.frame % 50 == 0:
       ldw = CC.hudControl.visualAlert == VisualAlert.ldw
-      #steer_required = CC.hudControl.visualAlert == VisualAlert.steerRequired
+      steer_required = CC.hudControl.visualAlert == VisualAlert.steerRequired
       # TODO: find a way to silence audible warnings so we can add more hud alerts
-      #steer_required = steer_required and CS.lkas_allowed_speed
-      steer_required = CS.out.steerWarning
+      steer_required = steer_required and CS.lkas_allowed_speed
       can_sends.append(mazdacan.create_alert_command(self.packer, CS.cam_laneinfo, ldw, steer_required))
 
-    # Always send CAM_LKAS2 (torque 0 is the TI knock / pause). Stock CAM_LKAS is unchanged.
-    can_sends.extend(mazdacan.create_ti_steering_control(self.packer, self.CP.carFingerprint,
-                                                         self.frame, ti_apply_steer))
+    # CAM_LKAS2 wakes a silent TI. Continuous 100 Hz with no interceptor previously
+    # latched camera ERR_BIT_1 on this C2, so only knock briefly at startup, then
+    # keep sending if a heartbeat was seen.
+    send_ti = CS.ti_present or CS.ti_was_present
+    if self.ti_knock_frames_left > 0:
+      send_ti = True
+      self.ti_knock_frames_left -= 1
+      if CS.ti_present:
+        self.ti_knock_frames_left = 0
+    if send_ti:
+      can_sends.extend(mazdacan.create_ti_steering_control(self.packer, self.CP.carFingerprint,
+                                                           self.frame, ti_apply_steer))
     can_sends.append(mazdacan.create_steering_control(self.packer, self.CP.carFingerprint,
                                                       self.frame, apply_steer, CS.cam_lkas))
 

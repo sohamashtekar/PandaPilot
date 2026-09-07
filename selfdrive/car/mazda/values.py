@@ -33,6 +33,7 @@ class CarControllerParams:
   TI_STEER_DRIVER_FACTOR = 1
   TI_STEER_ERROR_MAX = 350
   TI_HEARTBEAT_TIMEOUT = 0.25     # seconds without a valid TI_FEEDBACK
+  TI_KNOCK_FRAMES = 200           # 2.0s of CAM_LKAS2 at 100Hz so a silent TI can answer
   TI_STEER_THRESHOLD = 10         # pause TI assist at or above this driver torque
   TI_STEER_THRESHOLD_RELEASE = 7  # resume only after torque drops below this
   TI_FAULT_CLEAR_TIMEOUT = 5.0    # seconds after loss before stock OP can re-engage
@@ -68,8 +69,9 @@ CAR_INFO: Dict[str, Union[MazdaCarInfo, List[MazdaCarInfo]]] = {
 
 class LKAS_LIMITS:
   STEER_THRESHOLD = 15
-  DISABLE_SPEED = 45    # kph
-  ENABLE_SPEED = 52     # kph
+  DISABLE_SPEED = 15    # kph — OP may command below stock LKAS; EPS ignores CAM_LKAS
+  ENABLE_SPEED = 16     # kph
+  STOCK_DISABLE_SPEED = 45  # kph — stock EPS still sets LKAS_BLOCK below this
 
 
 class TI_STATE:

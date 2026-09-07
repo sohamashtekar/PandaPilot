@@ -549,13 +549,7 @@ EVENTS: Dict[int, Dict[str, Union[Alert, AlertCallbackType]]] = {
       Priority.LOW, VisualAlert.none, AudibleAlert.none, .1),
   },
 
-  EventName.steerSaturated: {
-    ET.WARNING: Alert(
-      _("Take Control"),
-      _("Turn Exceeds Steering Limit"),
-      AlertStatus.userPrompt, AlertSize.mid,
-      Priority.LOW, VisualAlert.steerRequired, AudibleAlert.promptRepeat, 2.),
-  },
+  EventName.steerSaturated: {},
 
   # Thrown when the fan is driven at >50% but is not rotating
   EventName.fanMalfunction: {
