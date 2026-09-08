@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from cereal import car
 from openpilot.common.conversions import Conversions as CV
-from openpilot.selfdrive.car.mazda.values import CAR, LKAS_LIMITS
+from openpilot.selfdrive.car.mazda.values import CAR, LKAS_LIMITS, mazda_ti_mode
 from openpilot.selfdrive.car import get_safety_config
 from openpilot.selfdrive.car.interfaces import CarInterfaceBase
 
@@ -44,7 +44,9 @@ class CarInterface(CarInterfaceBase):
       ret.wheelbase = 2.83
       ret.steerRatio = 15.5
 
-    if candidate not in (CAR.CX5_2022, ):
+    if candidate == CAR.CX5_TI:
+      ret.minSteerSpeed = LKAS_LIMITS.TI_DISABLE_SPEED * CV.KPH_TO_MS
+    elif candidate not in (CAR.CX5_2022, ):
       ret.minSteerSpeed = LKAS_LIMITS.DISABLE_SPEED * CV.KPH_TO_MS
 
     ret.centerToFront = ret.wheelbase * 0.41
@@ -60,6 +62,8 @@ class CarInterface(CarInterfaceBase):
 
     if self.CS.lkas_disabled:
       events.add(EventName.lkasDisabled)
+    elif self.CS.low_speed_alert and not mazda_ti_mode(self.CP):
+      events.add(EventName.belowSteerSpeed)
 
     # Only after a TI was seen and then faulted (timeout / ERROR / VIOL). Never on cars without TI.
     # Driver tug is a pause, not this event.

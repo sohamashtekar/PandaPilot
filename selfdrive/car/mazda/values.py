@@ -41,6 +41,16 @@ class CarControllerParams:
     pass
 
 
+# dp-newcan stock CAM_LKAS path while TI is enabled (not d2's 800 / 15 / 1).
+class TIModeStockLimits:
+  STEER_MAX = 600
+  STEER_DELTA_UP = 10
+  STEER_DELTA_DOWN = 25
+  STEER_DRIVER_ALLOWANCE = 5
+  STEER_DRIVER_MULTIPLIER = 40
+  STEER_DRIVER_FACTOR = 1
+
+
 class CAR(StrEnum):
   CX5 = "MAZDA CX-5"
   CX5_TI = "MAZDA CX-5 TI"
@@ -76,9 +86,10 @@ CAR_INFO: Dict[str, Union[MazdaCarInfo, List[MazdaCarInfo]]] = {
 
 class LKAS_LIMITS:
   STEER_THRESHOLD = 15
-  DISABLE_SPEED = 15    # kph — OP may command below stock LKAS; EPS ignores CAM_LKAS
-  ENABLE_SPEED = 16     # kph
-  STOCK_DISABLE_SPEED = 45  # kph — stock EPS still sets LKAS_BLOCK below this
+  DISABLE_SPEED = 45    # kph — stock CX-5
+  ENABLE_SPEED = 52     # kph — stock CX-5
+  TI_DISABLE_SPEED = 15  # kph — CX-5 TI only; EPS ignores CAM_LKAS below ~45
+  TI_ENABLE_SPEED = 16   # kph
 
 
 class TI_STATE:

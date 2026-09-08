@@ -30,6 +30,7 @@ from openpilot.selfdrive.controls.lib.latcontrol_torque import LatControlTorque
 from openpilot.selfdrive.controls.lib.events import Events, ET
 from openpilot.selfdrive.controls.lib.alertmanager import AlertManager, set_offroad_alert
 from openpilot.selfdrive.controls.lib.vehicle_model import VehicleModel
+from openpilot.selfdrive.car.mazda.values import mazda_ti_mode
 from openpilot.system.hardware import HARDWARE, TICI
 
 SOFT_DISABLE_TIME = 3  # seconds
@@ -778,7 +779,7 @@ class Controls:
     recent_steer_pressed = (self.sm.frame - self.last_steering_pressed_frame)*DT_CTRL < 2.0
 
     # Send a "steering required alert" if saturation count has reached the limit
-    if lac_log.active and not recent_steer_pressed and not self.CP.notCar:
+    if lac_log.active and not recent_steer_pressed and not self.CP.notCar and not mazda_ti_mode(self.CP):
       if self.CP.lateralTuning.which() == 'torque' and not self.joystick_mode:
         undershooting = abs(lac_log.desiredLateralAccel) / abs(1e-3 + lac_log.actualLateralAccel) > 1.2
         turning = abs(lac_log.desiredLateralAccel) > 1.0

@@ -8,13 +8,12 @@ def create_steering_control(packer, car_fingerprint, frame, apply_steer, lkas):
   lo = tmp & 0xFF
   hi = tmp >> 8
 
-  # copy values from camera. Do not forward ERR_BIT_* — echoing them onto
-  # the car latches stock LKAS Fault until ignition cycle.
+  # copy values from camera
   b1 = int(lkas["BIT_1"])
-  er1 = 0
+  er1 = int(lkas["ERR_BIT_1"])
   lnv = 0
   ldw = 0
-  er2 = 0
+  er2 = int(lkas["ERR_BIT_2"])
 
   # Some older models do have these, newer models don't.
   # Either way, they all work just fine if set to zero.

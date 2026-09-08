@@ -2,7 +2,7 @@ from cereal import car
 from opendbc.can.packer import CANPacker
 from openpilot.selfdrive.car import apply_driver_steer_torque_limits, apply_ti_steer_torque_limits
 from openpilot.selfdrive.car.mazda import mazdacan
-from openpilot.selfdrive.car.mazda.values import CarControllerParams, Buttons, TI_STATE, mazda_ti_mode
+from openpilot.selfdrive.car.mazda.values import CarControllerParams, Buttons, TI_STATE, mazda_ti_mode, TIModeStockLimits
 
 VisualAlert = car.CarControl.HUDControl.VisualAlert
 
@@ -30,6 +30,7 @@ class CarController:
 
     apply_steer = 0
     ti_apply_steer = 0
+    stock_limits = TIModeStockLimits if self.ti_mode else CarControllerParams
     driver_tug = bool(CS.out.steeringPressed) or CS.ti_state == TI_STATE.DRIVER_OVER
 
     if CC.latActive:
@@ -39,16 +40,15 @@ class CarController:
         apply_steer = _unwind_steer_to_zero(self.apply_steer_last, CarControllerParams.TI_STEER_DELTA_DOWN_TUG)
         ti_apply_steer = _unwind_steer_to_zero(self.ti_apply_steer_last, CarControllerParams.TI_STEER_DELTA_DOWN_TUG)
       else:
-        if CS.ti_present and CS.ti_lkas_allowed:
+        # dp-newcan: independent CAM_LKAS 600 + CAM_LKAS2 600 while TI is in RUN.
+        if CS.ti_lkas_allowed:
           ti_new_steer = int(round(CC.actuators.steer * CarControllerParams.TI_STEER_MAX))
           ti_apply_steer = apply_ti_steer_torque_limits(ti_new_steer, self.ti_apply_steer_last,
                                                         CS.out.steeringTorque, CarControllerParams)
 
-        # Stock camera spoof. With TI, cap this path at 600 as well (openpilot was 600+600).
-        stock_steer_max = CarControllerParams.TI_STEER_MAX if CS.ti_present else CarControllerParams.STEER_MAX
-        new_steer = int(round(CC.actuators.steer * stock_steer_max))
+        new_steer = int(round(CC.actuators.steer * stock_limits.STEER_MAX))
         apply_steer = apply_driver_steer_torque_limits(new_steer, self.apply_steer_last,
-                                                       CS.out.steeringTorque, CarControllerParams)
+                                                       CS.out.steeringTorque, stock_limits)
 
     if CC.cruiseControl.cancel:
       # If brake is pressed, let us wait >70ms before trying to disable crz to avoid
@@ -88,12 +88,8 @@ class CarController:
                                                       self.frame, apply_steer, CS.cam_lkas))
 
     new_actuators = CC.actuators.copy()
-    if CS.ti_present:
-      new_actuators.steer = ti_apply_steer / CarControllerParams.TI_STEER_MAX
-      new_actuators.steerOutputCan = ti_apply_steer
-    else:
-      new_actuators.steer = apply_steer / CarControllerParams.STEER_MAX
-      new_actuators.steerOutputCan = apply_steer
+    new_actuators.steer = apply_steer / stock_limits.STEER_MAX
+    new_actuators.steerOutputCan = apply_steer
 
     self.frame += 1
     return new_actuators, can_sends

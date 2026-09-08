@@ -96,11 +96,19 @@ class CarState(CarStateBase):
     lkas_blocked = cp.vl["STEER_RATE"]["LKAS_BLOCK"] == 1
 
     if self.CP.minSteerSpeed > 0:
-      # Do not wait for LKAS_BLOCK to clear: stock EPS asserts it below ~45 kph.
-      if speed_kph > LKAS_LIMITS.ENABLE_SPEED:
-        self.lkas_allowed_speed = True
-      elif speed_kph < LKAS_LIMITS.DISABLE_SPEED:
-        self.lkas_allowed_speed = False
+      if mazda_ti_mode(self.CP):
+        # Do not wait for LKAS_BLOCK to clear: stock EPS asserts it below ~45 kph.
+        if speed_kph > LKAS_LIMITS.TI_ENABLE_SPEED:
+          self.lkas_allowed_speed = True
+        elif speed_kph < LKAS_LIMITS.TI_DISABLE_SPEED:
+          self.lkas_allowed_speed = False
+      else:
+        # LKAS is enabled at 52kph going up and disabled at 45kph going down
+        # wait for LKAS_BLOCK signal to clear when going up since it lags behind the speed sometimes
+        if speed_kph > LKAS_LIMITS.ENABLE_SPEED and not lkas_blocked:
+          self.lkas_allowed_speed = True
+        elif speed_kph < LKAS_LIMITS.DISABLE_SPEED:
+          self.lkas_allowed_speed = False
     else:
       self.lkas_allowed_speed = True
 
@@ -120,10 +128,13 @@ class CarState(CarStateBase):
     # Check if LKAS is disabled due to lack of driver torque when all other states indicate
     # it should be enabled (steer lockout). Don't warn until we actually get lkas active
     # and lose it again, i.e, after initial lkas activation
-    # LKAS_BLOCK is stock camera LKAS. Below ~45 kph it is normally set; treating
-    # it as a fault would zero latActive so OP never sends (TI never sees a command).
-    ret.steerFaultTemporary = (self.lkas_allowed_speed and lkas_blocked and
-                               speed_kph >= LKAS_LIMITS.STOCK_DISABLE_SPEED)
+    if mazda_ti_mode(self.CP):
+      # LKAS_BLOCK is stock camera LKAS. Below ~45 kph it is normally set; treating
+      # it as a fault would zero latActive so OP never sends (TI never sees a command).
+      ret.steerFaultTemporary = (self.lkas_allowed_speed and lkas_blocked and
+                                 speed_kph >= LKAS_LIMITS.DISABLE_SPEED)
+    else:
+      ret.steerFaultTemporary = self.lkas_allowed_speed and lkas_blocked
 
     self.acc_active_last = ret.cruiseState.enabled
 
@@ -133,9 +144,7 @@ class CarState(CarStateBase):
     self.lkas_disabled = cp_cam.vl["CAM_LANEINFO"]["LANE_LINES"] == 0
     self.cam_lkas = cp_cam.vl["CAM_LKAS"]
     self.cam_laneinfo = cp_cam.vl["CAM_LANEINFO"]
-    # OP spoofs CAM_LKAS. Camera ERR_BIT_1 is not an EPS fault after intercept
-    # and stayed stuck at 1 on this C2 after CAM_LKAS2, blocking engage.
-    ret.steerFaultPermanent = False
+    ret.steerFaultPermanent = cp_cam.vl["CAM_LKAS"]["ERR_BIT_1"] == 1
 
     return ret
 
