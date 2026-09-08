@@ -33,7 +33,6 @@ class CarControllerParams:
   TI_STEER_DRIVER_FACTOR = 1
   TI_STEER_ERROR_MAX = 350
   TI_HEARTBEAT_TIMEOUT = 0.25     # seconds without a valid TI_FEEDBACK
-  TI_KNOCK_FRAMES = 200           # 2.0s of CAM_LKAS2 at 100Hz so a silent TI can answer
   TI_STEER_THRESHOLD = 10         # pause TI assist at or above this driver torque
   TI_STEER_THRESHOLD_RELEASE = 7  # resume only after torque drops below this
   TI_FAULT_CLEAR_TIMEOUT = 5.0    # seconds after loss before stock OP can re-engage
@@ -44,11 +43,18 @@ class CarControllerParams:
 
 class CAR(StrEnum):
   CX5 = "MAZDA CX-5"
+  CX5_TI = "MAZDA CX-5 TI"
   CX9 = "MAZDA CX-9"
   MAZDA3 = "MAZDA 3"
   MAZDA6 = "MAZDA 6"
   CX9_2021 = "MAZDA CX-9 2021"
   CX5_2022 = "MAZDA CX-5 2022"
+
+
+def mazda_ti_mode(CP=None):
+  # On-device switch: Settings → Vehicle Model → MAZDA CX-5 TI, then reboot.
+  fingerprint = getattr(CP, "carFingerprint", None) if CP is not None else None
+  return fingerprint == CAR.CX5_TI
 
 
 @dataclass
@@ -59,6 +65,7 @@ class MazdaCarInfo(CarInfo):
 
 CAR_INFO: Dict[str, Union[MazdaCarInfo, List[MazdaCarInfo]]] = {
   CAR.CX5: MazdaCarInfo("Mazda CX-5 2017-21"),
+  CAR.CX5_TI: MazdaCarInfo("Mazda CX-5 2017-21 with TI"),
   CAR.CX9: MazdaCarInfo("Mazda CX-9 2016-20"),
   CAR.MAZDA3: MazdaCarInfo("Mazda 3 2017-18"),
   CAR.MAZDA6: MazdaCarInfo("Mazda 6 2017-20"),
@@ -108,6 +115,7 @@ FW_QUERY_CONFIG = FwQueryConfig(
 
 DBC = {
   CAR.CX5: dbc_dict('mazda_2017', None),
+  CAR.CX5_TI: dbc_dict('mazda_2017', None),
   CAR.CX9: dbc_dict('mazda_2017', None),
   CAR.MAZDA3: dbc_dict('mazda_2017', None),
   CAR.MAZDA6: dbc_dict('mazda_2017', None),
@@ -116,4 +124,4 @@ DBC = {
 }
 
 # Gen 1 hardware: same CAN messages and same camera
-GEN1 = {CAR.CX5, CAR.CX9, CAR.CX9_2021, CAR.MAZDA3, CAR.MAZDA6, CAR.CX5_2022}
+GEN1 = {CAR.CX5, CAR.CX5_TI, CAR.CX9, CAR.CX9_2021, CAR.MAZDA3, CAR.MAZDA6, CAR.CX5_2022}

@@ -255,4 +255,6 @@ FW_VERSIONS = {
       b'PXM6-21PS1-B\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00',
     ],
   },
+  # Manual Vehicle Model only. Empty so Auto FW fingerprint stays uniquely CX-5.
+  CAR.CX5_TI: {},
 }

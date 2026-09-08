@@ -6,7 +6,7 @@ from openpilot.common.swaglog import cloudlog
 from opendbc.can.can_define import CANDefine
 from opendbc.can.parser import CANParser
 from openpilot.selfdrive.car.interfaces import CarStateBase
-from openpilot.selfdrive.car.mazda.values import DBC, LKAS_LIMITS, GEN1, TI_STATE, CarControllerParams
+from openpilot.selfdrive.car.mazda.values import DBC, LKAS_LIMITS, GEN1, TI_STATE, CarControllerParams, mazda_ti_mode
 
 
 class CarState(CarStateBase):
@@ -240,8 +240,9 @@ class CarState(CarStateBase):
 
   @staticmethod
   def get_body_can_parser(CP):
-    # Frequency 0: parse TI_FEEDBACK if present, never fail canValid when it is missing.
+    # TI mode on: 50 Hz required for canValid (dp-newcan). Off: parse if present, do not fail CAN.
+    freq = 50 if mazda_ti_mode(CP) else 0
     messages = [
-      ("TI_FEEDBACK", 0),
+      ("TI_FEEDBACK", freq),
     ]
     return CANParser(DBC[CP.carFingerprint]["pt"], messages, 1)

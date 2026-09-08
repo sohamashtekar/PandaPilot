@@ -2,7 +2,7 @@ from cereal import car
 from opendbc.can.packer import CANPacker
 from openpilot.selfdrive.car import apply_driver_steer_torque_limits, apply_ti_steer_torque_limits
 from openpilot.selfdrive.car.mazda import mazdacan
-from openpilot.selfdrive.car.mazda.values import CarControllerParams, Buttons, TI_STATE
+from openpilot.selfdrive.car.mazda.values import CarControllerParams, Buttons, TI_STATE, mazda_ti_mode
 
 VisualAlert = car.CarControl.HUDControl.VisualAlert
 
@@ -20,7 +20,7 @@ class CarController:
     self.CP = CP
     self.apply_steer_last = 0
     self.ti_apply_steer_last = 0
-    self.ti_knock_frames_left = CarControllerParams.TI_KNOCK_FRAMES
+    self.ti_mode = mazda_ti_mode(CP)
     self.packer = CANPacker(dbc_name)
     self.brake_counter = 0
     self.frame = 0
@@ -79,16 +79,9 @@ class CarController:
       steer_required = steer_required and CS.lkas_allowed_speed
       can_sends.append(mazdacan.create_alert_command(self.packer, CS.cam_laneinfo, ldw, steer_required))
 
-    # CAM_LKAS2 wakes a silent TI. Continuous 100 Hz with no interceptor previously
-    # latched camera ERR_BIT_1 on this C2, so only knock briefly at startup, then
-    # keep sending if a heartbeat was seen.
-    send_ti = CS.ti_present or CS.ti_was_present
-    if self.ti_knock_frames_left > 0:
-      send_ti = True
-      self.ti_knock_frames_left -= 1
-      if CS.ti_present:
-        self.ti_knock_frames_left = 0
-    if send_ti:
+    # dp-newcan: always send CAM_LKAS2 when TI mode is on (torque 0 until RUN).
+    # Off: do not send 0x249 so a C2 without an interceptor stays stock.
+    if self.ti_mode:
       can_sends.extend(mazdacan.create_ti_steering_control(self.packer, self.CP.carFingerprint,
                                                            self.frame, ti_apply_steer))
     can_sends.append(mazdacan.create_steering_control(self.packer, self.CP.carFingerprint,
